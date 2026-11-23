@@ -177,10 +177,21 @@ export async function POST(request: Request) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     // Never leak the secret key in error responses. Stripe errors do not
     // include the key, but we strip the type just in case.
+    // If the error is about a missing env var, point the user to the
+    // /api/debug/env endpoint so they can verify what's actually set
+    // on the Vercel runtime.
+    const isEnvMissingError = message.toLowerCase().includes('is not set')
     return NextResponse.json(
       {
         error: 'Failed to create Stripe Checkout session.',
         detail: message,
+        ...(isEnvMissingError
+          ? {
+              debugUrl: '/api/debug/env',
+              debugHint:
+                'Open /api/debug/env in your browser to see which Stripe env vars are actually present on the Vercel runtime. Most common cause: env var saved in the dashboard but no redeploy was triggered after.',
+            }
+          : {}),
       },
       { status: 500 }
     )

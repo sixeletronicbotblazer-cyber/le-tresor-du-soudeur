@@ -351,6 +351,9 @@ function ErrorState({
   message: string
   onBack: () => void
 }) {
+  // Detect the specific "STRIPE_SECRET_KEY is not set" error so we can
+  // show a more actionable message with a direct link to the debug page.
+  const isEnvMissing = message.toLowerCase().includes('is not set')
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="text-destructive text-3xl mb-3">⚠</div>
@@ -358,6 +361,33 @@ function ErrorState({
       <p className="text-muted-foreground text-sm mb-6 max-w-[400px]">
         {message}
       </p>
+
+      {isEnvMissing && (
+        <div className="bg-[#0a0b0d] border border-[#26303c] rounded-lg p-4 mb-6 max-w-[440px] text-left">
+          <p className="text-[13px] font-bold text-primary mb-2">
+            Diagnostic
+          </p>
+          <p className="text-[12px] text-muted-foreground leading-relaxed mb-3">
+            As variáveis de ambiente Stripe não chegaram no runtime.
+            Clique no link abaixo para ver exatamente quais variáveis estão
+            configuradas:
+          </p>
+          <a
+            href="/api/debug/env"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block text-[12.5px] text-primary font-bold underline underline-offset-2 hover:text-[#ffc064] break-all"
+          >
+            /api/debug/env →
+          </a>
+          <p className="text-[11.5px] text-muted-foreground mt-3 leading-relaxed">
+            <strong className="text-foreground">Causa mais comum:</strong>{' '}
+            a variável foi salva no painel da Vercel, mas não foi feito
+            redeploy depois. Vá em Deployments → ⋯ → Redeploy.
+          </p>
+        </div>
+      )}
+
       <button
         type="button"
         onClick={onBack}
