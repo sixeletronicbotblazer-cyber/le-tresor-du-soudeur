@@ -355,14 +355,16 @@ function ErrorState({
   // show a more actionable message with a direct link to the debug page.
   const isEnvMissing = message.toLowerCase().includes('is not set')
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-center">
+    <div className="flex flex-col items-center justify-center py-8 text-center">
+      {/* Show the diagnostic box FIRST when env is missing — it's the
+          most important information for the user, not the cryptic error. */}
+      {isEnvMissing && <EnvDiagnosticBox />}
+
       <div className="text-destructive text-3xl mb-3">⚠</div>
       <h1 className="text-xl font-bold mb-2">Paiement impossible</h1>
       <p className="text-muted-foreground text-sm mb-6 max-w-[400px]">
         {message}
       </p>
-
-      {isEnvMissing && <EnvDiagnosticBox />}
 
       <button
         type="button"
