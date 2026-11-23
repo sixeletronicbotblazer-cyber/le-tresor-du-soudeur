@@ -144,12 +144,47 @@ function CheckoutInner() {
   // Create the Checkout Session and mount the embedded form
   // ----------------------------------------------------------
 
+  // Guard against concurrent mountCheckout() calls. If the user clicks
+  // "Continue to payment", then quickly back to review and forward again
+  // before the first mount finished, we'd race and end up trying to mount
+  // two Stripe instances — Stripe throws "You cannot have multiple
+  // Embedded Checkout objects" in that case.
+  const mountingRef = useRef(false)
+
+  // Track which (plan, bumps) combo is currently mounted so we don't
+  // re-mount the same session twice (which would also throw the
+  // "multiple Embedded Checkout objects" error).
+  const mountedKeyRef = useRef<string | null>(null)
+
   const mountCheckout = useCallback(
     async (planId: PlanId, bumpIds: BumpId[]) => {
+      // Prevent concurrent mounts.
+      if (mountingRef.current) return
+      const key = cacheKey(planId, bumpIds)
+      // Already mounted for this exact selection — nothing to do.
+      if (mountedKeyRef.current === key && checkoutRef.current) return
+
+      mountingRef.current = true
       setLoading(true)
       setError(null)
       try {
-        const key = cacheKey(planId, bumpIds)
+        // CRITICAL: destroy the previous Stripe instance BEFORE creating
+        // a new one. The Stripe SDK throws "You cannot have multiple
+        // Embedded Checkout objects" if you call createEmbeddedCheckoutPage
+        // while a previous instance is still alive — even if you unmount
+        // it afterwards. So we unmount + destroy first, synchronously.
+        if (checkoutRef.current) {
+          try {
+            checkoutRef.current.unmount()
+            checkoutRef.current.destroy()
+          } catch {
+            // Ignore errors from double-destroy — the instance may
+            // already be gone if React strict-mode ran the cleanup twice.
+          }
+          checkoutRef.current = null
+          mountedKeyRef.current = null
+        }
+
         let clientSecret = clientSecretCache.get(key)
         if (!clientSecret) {
           const res = await fetch('/api/checkout', {
@@ -196,45 +231,70 @@ function CheckoutInner() {
           },
         })
 
-        // If the component re-mounted, tear down the previous instance.
-        checkoutRef.current?.unmount()
+        // Double-check the container is still in the DOM (the user may
+        // have navigated back to review while we were fetching).
         const container = containerRef.current
         if (!container) {
-          throw new Error('Checkout container is not ready.')
+          // No container — the user went back to review. Tear down
+          // the new instance and bail.
+          try {
+            checkout.unmount()
+            checkout.destroy()
+          } catch {
+            /* noop */
+          }
+          return
         }
         checkout.mount(container)
         checkoutRef.current = checkout
+        mountedKeyRef.current = key
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         setError(message)
       } finally {
+        mountingRef.current = false
         setLoading(false)
       }
     },
     []
   )
 
-  // When the user advances to the payment step, create the session.
+  // When the user advances to the payment step (or changes their bump
+  // selection while on the payment step), create/recreate the session.
   useEffect(() => {
     if (!plan || paid || step !== 'payment') return
     void mountCheckout(plan.id, selectedBumps)
   }, [plan, paid, step, selectedBumps, mountCheckout])
 
   // If the user goes back to the review step, unmount the iframe so
-  // they don't see the old form while changing their selection.
+  // they don't see the old form while changing their selection. We
+  // destroy + null out the refs so the next mount starts fresh.
   useEffect(() => {
     if (step === 'review' && checkoutRef.current) {
-      checkoutRef.current.unmount()
+      try {
+        checkoutRef.current.unmount()
+        checkoutRef.current.destroy()
+      } catch {
+        /* noop */
+      }
       checkoutRef.current = null
+      mountedKeyRef.current = null
     }
   }, [step])
 
   // Clean up the embedded checkout on unmount.
   useEffect(() => {
     return () => {
-      checkoutRef.current?.unmount()
-      checkoutRef.current?.destroy()
-      checkoutRef.current = null
+      if (checkoutRef.current) {
+        try {
+          checkoutRef.current.unmount()
+          checkoutRef.current.destroy()
+        } catch {
+          /* noop */
+        }
+        checkoutRef.current = null
+        mountedKeyRef.current = null
+      }
     }
   }, [])
 
