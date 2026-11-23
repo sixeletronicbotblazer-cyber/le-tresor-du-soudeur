@@ -4,6 +4,7 @@ import {
   getPublicAssetUrl,
   formatPrice,
 } from '@/lib/plans'
+import { BulkImportAssistant } from './BulkImportAssistant'
 
 /**
  * /debug — user-friendly HTML page showing the status of every Stripe
@@ -486,6 +487,9 @@ export default function DebugPage() {
             </ol>
           </div>
         )}
+
+        {/* Bulk Import Assistant — interactive, client-only */}
+        <BulkImportAssistant currentEnvVars={vars} />
 
         {/* Bonus: plan + bump info */}
         <div
