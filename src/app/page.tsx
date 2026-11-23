@@ -3,16 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 // ============================================================
-// CONFIG — Replace empty strings with real values when launching
+// CHECKOUT ROUTES
 // ============================================================
-// Three independent checkout destinations:
-//  - checkoutBase:     Forfait de base 9 €
-//  - checkoutUpsell:   Forfait professionnel offer at 12 € (popup upsell only)
-//  - checkoutPro:      Forfait professionnel 17 € (regular price on the page)
+// All three purchase paths go to our own /checkout page, which uses the
+// Stripe Embedded Checkout (no redirect to checkout.stripe.com).
+// The plan id is matched against the canonical PLANS table in
+// src/lib/stripe.ts so the price + product info can never drift.
+const CHECKOUT_ROUTES = {
+  base: '/checkout?plan=base', // Forfait de base 9 €
+  upsell: '/checkout?plan=upsell', // Forfait professionnel — popup offer 12 €
+  pro: '/checkout?plan=pro', // Forfait professionnel 17 €
+} as const
+
+// Support email — leave empty to show a generic message instead.
 const CONFIG = {
-  checkoutBase: '',
-  checkoutUpsell: '',
-  checkoutPro: '',
   supportEmail: '',
 }
 
@@ -992,17 +996,20 @@ export default function Home() {
     }, 4500)
   }, [])
 
-  // Navigate to a checkout URL if it is configured, otherwise show the
-  // "payment link coming soon" notice. This is the single source of truth
-  // for what happens when a buyer chooses any of the three plans.
+  // Navigate to the embedded Stripe Checkout page for the given plan.
+  // All three plans share the same /checkout route; the plan id is passed
+  // as a query param so /checkout can fetch the right client_secret from
+  // /api/checkout.
   const goToCheckout = useCallback(
-    (url: string) => {
-      if (url && /^https:\/\//i.test(url)) {
-        window.location.href = url
+    (plan: 'base' | 'upsell' | 'pro') => {
+      const route = CHECKOUT_ROUTES[plan]
+      if (route) {
+        window.location.href = route
         return
       }
+      // Defensive: should never happen since CHECKOUT_ROUTES is exhaustive.
       showNotice(
-        'Le lien de paiement de ce pack sera disponible prochainement.'
+        'Une erreur est survenue. Veuillez recharger la page et réessayer.'
       )
     },
     [showNotice]
@@ -1017,19 +1024,19 @@ export default function Home() {
 
   // Path 2 — pro plan CTA. Unchanged: goes to the 17 € checkout.
   const handleProCheckout = useCallback(() => {
-    goToCheckout(CONFIG.checkoutPro)
+    goToCheckout('pro')
   }, [goToCheckout])
 
   // Upsell confirm — buyer accepts the 12 € professional offer.
   const handleUpsellConfirm = useCallback(() => {
     setUpsellOpen(false)
-    goToCheckout(CONFIG.checkoutUpsell)
+    goToCheckout('upsell')
   }, [goToCheckout])
 
   // Upsell decline — buyer keeps the 9 € base plan.
   const handleUpsellDecline = useCallback(() => {
     setUpsellOpen(false)
-    goToCheckout(CONFIG.checkoutBase)
+    goToCheckout('base')
   }, [goToCheckout])
 
   // Upsell close (X / Esc / click outside) — no redirect.
