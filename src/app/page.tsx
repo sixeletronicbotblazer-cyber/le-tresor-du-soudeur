@@ -1,12 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 // ============================================================
 // CONFIG — Replace empty strings with real values when launching
 // ============================================================
+// Three independent checkout destinations:
+//  - checkoutBase:     Forfait de base 9 €
+//  - checkoutUpsell:   Forfait professionnel offer at 12 € (popup upsell only)
+//  - checkoutPro:      Forfait professionnel 17 € (regular price on the page)
 const CONFIG = {
   checkoutBase: '',
+  checkoutUpsell: '',
   checkoutPro: '',
   supportEmail: '',
 }
@@ -188,6 +193,25 @@ const GALLERY_ROW_3 = [
   { src: '/assets/p9.webp', alt: 'Tabouret' },
   { src: '/assets/p2.webp', alt: 'Cadre de lit' },
 ]
+
+// Upsell popup content (Forfait professionnel offer at 12 €)
+const UPSELL_TITLE = 'Attendez ! Ne fermez pas encore cette fenêtre…'
+const UPSELL_SUBTITLE =
+  'Ajoutez plus de 1 000 plans supplémentaires et les 4 bonus offerts avec le forfait professionnel.'
+const UPSELL_OLD_PRICE_LABEL = 'Au lieu de 17 € sur la page'
+const UPSELL_PRICE = '12 €'
+const UPSELL_PRICE_NOTE = 'Paiement unique · Accès à vie'
+const UPSELL_FEATURES = [
+  'Plus de 4 000 plans de métallerie au total',
+  'Cotes, coupes, matériaux, coûts et prix conseillé',
+  'Bonus 1 : Guide de présentation du mobilier en tubes d’acier',
+  'Bonus 2 : Guide complet des prix du mobilier industriel',
+  'Bonus 3 : Les 10 plus grandes erreurs des soudeurs débutants',
+  'Bonus 4 : Les types d’acier et leurs utilisations',
+  'Accès numérique immédiat et à vie',
+]
+const UPSELL_CONFIRM_LABEL = 'Oui ! Je veux le pack complet pour 12 €'
+const UPSELL_DECLINE_LABEL = 'Non, continuer avec le forfait de base à 9 €'
 
 // ============================================================
 // COMPONENTS
@@ -725,6 +749,233 @@ function Notice({ message, show }: { message: string; show: boolean }) {
 }
 
 // ============================================================
+// UPSELL POPUP
+// Opens only when the user clicks the base-plan CTA.
+// Confirm  → checkout 12 € (upsell)
+// Decline  → checkout 9 €  (base)
+// X / Esc / click-outside → close without redirect
+// ============================================================
+function UpsellModal({
+  open,
+  onClose,
+  onConfirm,
+  onDecline,
+}: {
+  open: boolean
+  onClose: () => void
+  onConfirm: () => void
+  onDecline: () => void
+}) {
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  // Lock body scroll while the modal is open + close on Esc
+  useEffect(() => {
+    if (!open) return
+    const previousOverflow = document.body.style.overflow
+    const previousPaddingRight = document.body.style.paddingRight
+    // Measure scrollbar width so locking does not cause layout shift on desktop
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+    document.body.style.overflow = 'hidden'
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`
+    }
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.body.style.paddingRight = previousPaddingRight
+      window.removeEventListener('keydown', handleKey)
+    }
+  }, [open, onClose])
+
+  // Focus the dialog container when it opens (keyboard / a11y)
+  useEffect(() => {
+    if (open && cardRef.current) {
+      // Defer to next frame to ensure the element is painted
+      const id = window.requestAnimationFrame(() => {
+        cardRef.current?.focus()
+      })
+      return () => window.cancelAnimationFrame(id)
+    }
+  }, [open])
+
+  if (!open) return null
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Close only when the click lands on the backdrop itself, not on the card
+    if (e.target === e.currentTarget) {
+      onClose()
+    }
+  }
+
+  return (
+    <div
+      // BACKDROP — dark + blurred
+      onClick={handleBackdropClick}
+      aria-modal="true"
+      role="dialog"
+      aria-labelledby="upsell-title"
+      aria-describedby="upsell-subtitle"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 bg-black/70 backdrop-blur-[6px] animate-[fadeIn_0.18s_ease-out]"
+    >
+      <div
+        ref={cardRef}
+        tabIndex={-1}
+        // CARD — blue-graphite background, amber border, discreet glow
+        className="
+          relative w-full max-w-[440px] sm:max-w-[460px]
+          max-h-[92vh] overflow-y-auto
+          rounded-2xl
+          bg-[#0e1520]
+          border border-[#a56b27]
+          shadow-[0_0_40px_rgba(233,148,42,0.18),0_24px_60px_rgba(0,0,0,0.6)]
+          outline-none
+          animate-[popIn_0.22s_ease-out]
+        "
+      >
+        {/* Custom scrollbar styling (inline so it stays scoped) */}
+        <style>{`
+          .upsell-scroll::-webkit-scrollbar { width: 8px; }
+          .upsell-scroll::-webkit-scrollbar-track { background: transparent; }
+          .upsell-scroll::-webkit-scrollbar-thumb { background: #26303c; border-radius: 4px; }
+        `}</style>
+
+        {/* Close X — top right, no redirect */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Fermer la fenêtre"
+          className="absolute top-3 right-3 z-10 w-9 h-9 flex items-center justify-center rounded-full bg-black/40 border border-[#3a4250] text-[#cfd3d8] hover:bg-black/70 hover:text-white hover:border-[#a56b27] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffae36]"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+
+        {/* Scrollable content area */}
+        <div className="upsell-scroll px-5 sm:px-7 pt-7 sm:pt-9 pb-5 sm:pb-7 text-center">
+          {/* Mockup */}
+          <img
+            src="/assets/pack-pro.webp"
+            width={1100}
+            height={1100}
+            alt="Forfait professionnel — plus de 4 000 plans et 4 bonus"
+            className="w-full max-w-[200px] sm:max-w-[220px] mx-auto mb-3 drop-shadow-[0_12px_24px_rgba(0,0,0,0.55)]"
+            loading="eager"
+          />
+
+          {/* Title */}
+          <h3
+            id="upsell-title"
+            className="text-primary font-extrabold text-[19px] sm:text-[22px] leading-tight m-0 mb-2 tracking-[-0.01em]"
+          >
+            {UPSELL_TITLE}
+          </h3>
+
+          {/* Subtitle */}
+          <p
+            id="upsell-subtitle"
+            className="text-[13.5px] sm:text-[14.5px] text-[#c7ccd3] leading-relaxed m-0 mb-4 sm:mb-5"
+          >
+            {UPSELL_SUBTITLE}
+          </p>
+
+          {/* Price block */}
+          <div className="bg-[#0a0b0d] border border-[#26303c] rounded-xl px-4 py-4 sm:py-5 mb-4 sm:mb-5">
+            <div className="text-[12px] sm:text-[13px] text-muted-foreground mb-0.5">
+              {UPSELL_OLD_PRICE_LABEL}
+            </div>
+            <div className="text-primary font-extrabold text-[44px] sm:text-[52px] leading-none tracking-[-0.02em]">
+              {UPSELL_PRICE}
+            </div>
+            <div className="text-[11.5px] sm:text-[12.5px] text-[#9aa0a8] mt-1.5">
+              {UPSELL_PRICE_NOTE}
+            </div>
+          </div>
+
+          {/* Checklist */}
+          <ul className="list-none p-0 m-0 text-left space-y-2 mb-5 sm:mb-6">
+            {UPSELL_FEATURES.map((f, i) => {
+              const isBonus = f.startsWith('Bonus')
+              return (
+                <li
+                  key={i}
+                  className={`flex gap-2.5 items-start text-[13px] sm:text-[13.5px] leading-snug ${
+                    isBonus ? 'text-foreground font-semibold' : 'text-[#cdd1d6]'
+                  }`}
+                >
+                  <span className="text-primary font-extrabold flex-shrink-0 mt-px">
+                    ✓
+                  </span>
+                  <span>{f}</span>
+                </li>
+              )
+            })}
+          </ul>
+
+          {/* Primary action — amber */}
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="
+              w-full inline-flex items-center justify-center
+              min-h-[54px] px-5 py-3.5
+              rounded-lg font-extrabold text-[15px] sm:text-[16px]
+              bg-primary text-primary-foreground
+              shadow-[0_7px_26px_rgba(233,148,42,0.32)]
+              hover:bg-[#ffc064] hover:-translate-y-0.5
+              transition-all duration-200
+              focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffae36]
+            "
+          >
+            {UPSELL_CONFIRM_LABEL}
+          </button>
+
+          {/* Secondary action — dark */}
+          <button
+            type="button"
+            onClick={onDecline}
+            className="
+              w-full inline-flex items-center justify-center
+              min-h-[48px] px-5 py-3 mt-2.5
+              rounded-lg font-bold text-[13px] sm:text-[14px]
+              bg-transparent text-[#a6aab1]
+              border border-[#3a4250]
+              hover:bg-[#161e2a] hover:text-[#e6e8eb] hover:border-[#5a6473]
+              transition-all duration-200
+              focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffae36]
+            "
+          >
+            {UPSELL_DECLINE_LABEL}
+          </button>
+
+          <p className="text-[11px] text-[#7e848d] mt-3 mb-0">
+            Offre unique · Mise à niveau vers le forfait professionnel
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
 // PAGE
 // ============================================================
 export default function Home() {
@@ -732,20 +983,72 @@ export default function Home() {
     msg: '',
     show: false,
   })
+  const [upsellOpen, setUpsellOpen] = useState(false)
 
-  const handleCheckout = (plan: 'base' | 'pro') => {
-    const destination =
-      plan === 'base' ? CONFIG.checkoutBase : CONFIG.checkoutPro
-    if (destination && /^https:\/\//i.test(destination)) {
-      window.location.href = destination
-      return
-    }
-    setNotice({
-      msg: 'Le lien de paiement de ce pack sera disponible prochainement.',
-      show: true,
-    })
-    setTimeout(() => setNotice((n) => ({ ...n, show: false })), 4500)
-  }
+  const showNotice = useCallback((msg: string) => {
+    setNotice({ msg, show: true })
+    window.setTimeout(() => {
+      setNotice((n) => ({ ...n, show: false }))
+    }, 4500)
+  }, [])
+
+  // Navigate to a checkout URL if it is configured, otherwise show the
+  // "payment link coming soon" notice. This is the single source of truth
+  // for what happens when a buyer chooses any of the three plans.
+  const goToCheckout = useCallback(
+    (url: string) => {
+      if (url && /^https:\/\//i.test(url)) {
+        window.location.href = url
+        return
+      }
+      showNotice(
+        'Le lien de paiement de ce pack sera disponible prochainement.'
+      )
+    },
+    [showNotice]
+  )
+
+  // Path 1 — base plan CTA. Instead of going straight to checkout, we open
+  // the upsell popup so the buyer can choose to upgrade to the pro offer
+  // at 12 € before paying.
+  const handleBaseClick = useCallback(() => {
+    setUpsellOpen(true)
+  }, [])
+
+  // Path 2 — pro plan CTA. Unchanged: goes to the 17 € checkout.
+  const handleProCheckout = useCallback(() => {
+    goToCheckout(CONFIG.checkoutPro)
+  }, [goToCheckout])
+
+  // Upsell confirm — buyer accepts the 12 € professional offer.
+  const handleUpsellConfirm = useCallback(() => {
+    setUpsellOpen(false)
+    goToCheckout(CONFIG.checkoutUpsell)
+  }, [goToCheckout])
+
+  // Upsell decline — buyer keeps the 9 € base plan.
+  const handleUpsellDecline = useCallback(() => {
+    setUpsellOpen(false)
+    goToCheckout(CONFIG.checkoutBase)
+  }, [goToCheckout])
+
+  // Upsell close (X / Esc / click outside) — no redirect.
+  const handleUpsellClose = useCallback(() => {
+    setUpsellOpen(false)
+  }, [])
+
+  // Backwards-compatible handler for the Pricing section.
+  // Routes by plan id; base opens the popup, pro goes straight to checkout.
+  const handleCheckout = useCallback(
+    (plan: 'base' | 'pro') => {
+      if (plan === 'base') {
+        handleBaseClick()
+      } else {
+        handleProCheckout()
+      }
+    },
+    [handleBaseClick, handleProCheckout]
+  )
 
   return (
     <main className="flex-1 flex flex-col">
@@ -761,6 +1064,12 @@ export default function Home() {
       <Faq />
       <Footer />
       <Notice message={notice.msg} show={notice.show} />
+      <UpsellModal
+        open={upsellOpen}
+        onClose={handleUpsellClose}
+        onConfirm={handleUpsellConfirm}
+        onDecline={handleUpsellDecline}
+      />
     </main>
   )
 }

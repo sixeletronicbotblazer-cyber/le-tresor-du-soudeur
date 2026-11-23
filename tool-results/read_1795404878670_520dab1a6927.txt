@@ -1,0 +1,767 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState } from 'react'
+     4→
+     5→// ============================================================
+     6→// CONFIG — Replace empty strings with real values when launching
+     7→// ============================================================
+     8→const CONFIG = {
+     9→  checkoutBase: '',
+    10→  checkoutPro: '',
+    11→  supportEmail: '',
+    12→}
+    13→
+    14→// ============================================================
+    15→// DATA
+    16→// ============================================================
+    17→const PROBLEM_CARDS = [
+    18→  {
+    19→    icon: '✎',
+    20→    title: "Des heures perdues à dessiner des plans",
+    21→    text:
+    22→      "Vous passez des heures à dessiner des plans de zéro, sur papier ou sur ordinateur, alors que vous pourriez déjà découper et souder.",
+    23→  },
+    24→  {
+    25→    icon: '⌁',
+    26→    title: "Des erreurs de cote qui coûtent cher",
+    27→    text:
+    28→      "Une seule mauvaise cote vous coûte du matériau, du temps et du bénéfice. Et vous devez racheter de l'acier.",
+    29→  },
+    30→  {
+    31→    icon: '▣',
+    32→    title: 'Fixer vos prix au hasard vous fait perdre de l’argent',
+    33→    text:
+    34→      "Sans connaître le coût réel ni le bon prix de vente, vous facturez trop peu et il ne vous reste presque aucun bénéfice.",
+    35→  },
+    36→  {
+    37→    icon: '◌',
+    38→    title: 'Des devis trop lents qui vous font perdre des clients',
+    39→    text:
+    40→      "Pendant que vous dessinez encore, le client est déjà parti chez un concurrent qui a pu lui montrer un modèle tout de suite.",
+    41→  },
+    42→]
+    43→
+    44→const FEATURES = [
+    45→  { icon: '⌁', label: 'Cotes précises de chaque pièce' },
+    46→  { icon: '⬡', label: 'Liste complète des matériaux' },
+    47→  { icon: '✂', label: 'Schéma de coupe détaillé' },
+    48→  { icon: '▤', label: 'Type et épaisseur de profilé recommandés' },
+    49→  { icon: '☷', label: 'Étapes de fabrication dans l’ordre' },
+    50→  { icon: '€', label: 'Coût moyen de fabrication' },
+    51→  { icon: '◈', label: 'Prix de vente conseillé' },
+    52→  { icon: '↗', label: 'Bénéfice estimé par pièce' },
+    53→]
+    54→
+    55→const BONUSES = [
+    56→  {
+    57→    img: '/assets/bonus1.webp',
+    58→    alt: 'Guide de présentation du mobilier en tubes d’acier',
+    59→    label: 'Bonus 1',
+    60→    title: 'Guide de présentation du mobilier en tubes d’acier',
+    61→  },
+    62→  {
+    63→    img: '/assets/bonus2.webp',
+    64→    alt: 'Guide complet des prix du mobilier industriel',
+    65→    label: 'Bonus 2',
+    66→    title: 'Guide complet des prix du mobilier industriel',
+    67→  },
+    68→  {
+    69→    img: '/assets/bonus3.webp',
+    70→    alt: 'Les 10 plus grandes erreurs des soudeurs débutants',
+    71→    label: 'Bonus 3',
+    72→    title: 'Les 10 plus grandes erreurs des soudeurs débutants',
+    73→  },
+    74→  {
+    75→    img: '/assets/bonus4.webp',
+    76→    alt: 'Les types d’acier et leurs utilisations',
+    77→    label: 'Bonus 4',
+    78→    title: 'Les types d’acier et leurs utilisations',
+    79→  },
+    80→]
+    81→
+    82→const BENEFITS = [
+    83→  {
+    84→    icon: '◷',
+    85→    title: 'Fabriquez beaucoup plus vite',
+    86→    text:
+    87→      "Ouvrez le plan, relevez les cotes, découpez et assemblez. Sans perdre de temps à réfléchir ou à dessiner.",
+    88→  },
+    89→  {
+    90→    icon: '▣',
+    91→    title: 'Fixez vos prix en toute confiance',
+    92→    text:
+    93→      "Coût des matériaux, prix conseillé et bénéfice estimé : tout est indiqué pour chaque plan. Fini les prix au hasard.",
+    94→  },
+    95→  {
+    96→    icon: '▱',
+    97→    title: 'Gardez votre atelier organisé',
+    98→    text:
+    99→      "Plus de 4 000 plans classés par catégorie : portails, mobilier, remorques, structures et bien plus.",
+   100→  },
+   101→  {
+   102→    icon: '↗',
+   103→    title: "Plus d'idées à vendre",
+   104→    text:
+   105→      "Montrez un modèle fini au client et concluez la vente sur place, sans le faire attendre.",
+   106→  },
+   107→]
+   108→
+   109→const PRO_PLAN_FEATURES = [
+   110→  'Plus de 4 000 plans de métallerie complets',
+   111→  '300 plans de portails et de grilles de protection',
+   112→  'Plans de petites et grandes remorques',
+   113→  'Plans de plateaux et de remorques',
+   114→  'Plans automobiles et de carrosserie',
+   115→  '600 plans de mobilier industriel',
+   116→  '500 plans de structures métalliques et d’abris',
+   117→  '50 plans de grills et de barbecues',
+   118→  '100 plans d’équipements de musculation',
+   119→  'Cotes, coupes, matériaux, coût et prix conseillé',
+   120→  'Bonus 1 : Guide de présentation du mobilier en tubes d’acier',
+   121→  'Bonus 2 : Guide complet des prix du mobilier industriel',
+   122→  'Bonus 3 : Les 10 plus grandes erreurs des soudeurs débutants',
+   123→  'Bonus 4 : Les types d’acier et leurs utilisations',
+   124→  'Accès numérique immédiat et à vie',
+   125→]
+   126→
+   127→const BASE_PLAN_FEATURES = [
+   128→  'Plus de 3 000 plans de métallerie sélectionnés',
+   129→  'Plans de portails et de grilles de protection',
+   130→  'Plans de petites et grandes remorques',
+   131→  'Plans de plateaux et de remorques',
+   132→  'Plans de mobilier industriel',
+   133→  'Plans de structures métalliques',
+   134→  'Cotes, coupes et listes de matériaux',
+   135→  'Accès numérique immédiat et à vie',
+   136→]
+   137→
+   138→const FAQS = [
+   139→  {
+   140→    q: 'Comment vais-je recevoir les plans ?',
+   141→    a: "Dès que votre paiement est confirmé, nous vous envoyons par e-mail l'accès au pack Le trésor du soudeur. Ouvrez-le sur votre téléphone ou votre ordinateur pour consulter ou enregistrer n'importe quel plan quand vous le souhaitez.",
+   142→  },
+   143→  {
+   144→    q: 'Quand vais-je recevoir mon accès ?',
+   145→    a: "L'accès est immédiat. Quelques minutes après le paiement, vous recevez un e-mail avec le lien vers la bibliothèque de plus de 4 000 plans.",
+   146→  },
+   147→  {
+   148→    q: 'Faut-il être un métallier expérimenté ?',
+   149→    a: "Non. Les plans comprennent les cotes précises, les schémas de coupe, les listes de matériaux et les étapes de fabrication. Si vous savez souder et découper le métal, vous pouvez suivre les plans du pack.",
+   150→  },
+   151→  {
+   152→    q: 'Les coûts et les prix correspondent-ils à ma région ?',
+   153→    a: "Oui. Le pack indique un prix de vente conseillé et un bénéfice estimé à titre de référence. Avec le calculateur automatique de prix de l'application, vous pouvez adapter les chiffres aux prix locaux des matériaux et établir vos devis en toute confiance.",
+   154→  },
+   155→  {
+   156→    q: "Je n'ai pas reçu l'e-mail d'accès. Que faire ?",
+   157→    a: "Vérifiez votre boîte de réception, vos courriers indésirables et l'onglet Promotions. Si l'e-mail n'est pas arrivé après 10 minutes, écrivez à notre adresse de support et nous vous donnerons accès manuellement.",
+   158→  },
+   159→  {
+   160→    q: 'Est-ce un paiement unique ou un abonnement ?',
+   161→    a: "C'est un paiement unique. Vous payez une fois et gardez l'accès aux plans et aux bonus à vie. Sans abonnement ni prélèvements récurrents.",
+   162→  },
+   163→]
+   164→
+   165→const GALLERY_ROW_1 = [
+   166→  { src: '/assets/p1.webp', alt: 'Bibliothèque industrielle' },
+   167→  { src: '/assets/p8.webp', alt: 'Portails en acier' },
+   168→  { src: '/assets/p3.webp', alt: 'Lit en acier' },
+   169→  { src: '/assets/p6.webp', alt: 'Table industrielle' },
+   170→  { src: '/assets/p9.webp', alt: 'Tabouret industriel' },
+   171→  { src: '/assets/p4.webp', alt: 'Meuble TV industriel' },
+   172→]
+   173→
+   174→const GALLERY_ROW_2 = [
+   175→  { src: '/assets/p2.webp', alt: 'Cadre de lit' },
+   176→  { src: '/assets/p5.webp', alt: 'Barre de traction' },
+   177→  { src: '/assets/p10.webp', alt: 'Barbecue en acier' },
+   178→  { src: '/assets/p7.webp', alt: 'Chaise en acier' },
+   179→  { src: '/assets/p3.webp', alt: 'Lit en acier' },
+   180→  { src: '/assets/p4.webp', alt: 'Meuble TV' },
+   181→]
+   182→
+   183→const GALLERY_ROW_3 = [
+   184→  { src: '/assets/p8.webp', alt: 'Portails' },
+   185→  { src: '/assets/p7.webp', alt: 'Chaise' },
+   186→  { src: '/assets/p4.webp', alt: 'Meuble TV' },
+   187→  { src: '/assets/p6.webp', alt: 'Table' },
+   188→  { src: '/assets/p9.webp', alt: 'Tabouret' },
+   189→  { src: '/assets/p2.webp', alt: 'Cadre de lit' },
+   190→]
+   191→
+   192→// ============================================================
+   193→// COMPONENTS
+   194→// ============================================================
+   195→
+   196→function Ribbon() {
+   197→  return (
+   198→    <div className="bg-[#792126] text-center text-white text-[12px] sm:text-[13px] font-bold px-3 py-2.5">
+   199→      Plus de 4 000 plans de métallerie · Accès numérique
+   200→    </div>
+   201→  )
+   202→}
+   203→
+   204→function CTAButton({
+   205→  children,
+   206→  href = '#packs',
+   207→  variant = 'primary',
+   208→  className = '',
+   209→  onClick,
+   210→}: {
+   211→  children: React.ReactNode
+   212→  href?: string
+   213→  variant?: 'primary' | 'block'
+   214→  className?: string
+   215→  onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void
+   216→}) {
+   217→  const base =
+   218→    'inline-flex items-center justify-center min-h-[52px] sm:min-h-[56px] px-6 sm:px-8 py-3.5 rounded-lg font-extrabold text-base sm:text-[17px] no-underline transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-3 focus-visible:outline-white focus-visible:outline-offset-2'
+   219→  const styles =
+   220→    variant === 'block'
+   221→      ? 'w-full bg-primary text-primary-foreground shadow-[0_7px_26px_rgba(233,148,42,0.28)] hover:bg-[#ffc064]'
+   222→      : 'bg-primary text-primary-foreground shadow-[0_7px_26px_rgba(233,148,42,0.28)] hover:bg-[#ffc064]'
+   223→  return (
+   224→    <a
+   225→      href={href}
+   226→      onClick={onClick}
+   227→      className={`${base} ${styles} ${className}`}
+   228→    >
+   229→      {children}
+   230→    </a>
+   231→  )
+   232→}
+   233→
+   234→function SectionHeading({
+   235→  eyebrow,
+   236→  title,
+   237→  lead,
+   238→  className = '',
+   239→}: {
+   240→  eyebrow?: string
+   241→  title: string
+   242→  lead?: string
+   243→  className?: string
+   244→}) {
+   245→  return (
+   246→    <div className={`text-center ${className}`}>
+   247→      {eyebrow && (
+   248→        <div className="text-accent uppercase tracking-[0.15em] text-[11px] sm:text-xs font-extrabold mb-2">
+   249→          {eyebrow}
+   250→        </div>
+   251→      )}
+   252→      <h2 className="text-[27px] sm:text-[32px] md:text-[38px] leading-[1.15] tracking-[-0.035em] text-primary font-bold m-0">
+   253→        {title}
+   254→      </h2>
+   255→      {lead && (
+   256→        <p className="text-muted-foreground leading-relaxed mt-3 mx-auto mb-0 max-w-[680px] text-[15px] sm:text-base px-2">
+   257→          {lead}
+   258→        </p>
+   259→      )}
+   260→    </div>
+   261→  )
+   262→}
+   263→
+   264→function Hero() {
+   265→  return (
+   266→    <section className="py-12 sm:py-14 lg:py-[52px] px-4 sm:px-5 text-center">
+   267→      <div className="w-full max-w-[1050px] mx-auto">
+   268→        <h1 className="text-[38px] xs:text-[44px] sm:text-[56px] md:text-[64px] lg:text-[68px] leading-[1.02] tracking-[-0.055em] text-primary font-bold mt-0 mb-4 sm:mb-5">
+   269→          Le trésor du soudeur
+   270→        </h1>
+   271→        <p className="text-[17px] sm:text-[20px] md:text-[23px] leading-[1.45] font-bold max-w-[730px] mx-auto mb-3 sm:mb-4 text-foreground">
+   272→          Plus de 4 000 plans de métallerie prêts à{' '}
+   273→          <strong className="text-primary font-bold">
+   274→            ouvrir, relever les cotes, fabriquer et vendre
+   275→          </strong>
+   276→        </p>
+   277→        <p className="text-[13px] sm:text-sm text-[#9b9da3] m-0">
+   278→          Portails · Mobilier industriel · Remorques · Structures métalliques ·
+   279→          Abris et bien plus
+   280→        </p>
+   281→        <img
+   282→          src="/assets/pack-pro.webp"
+   283→          width={1100}
+   284→          height={1100}
+   285→          alt="Collection de plans de métallerie Le trésor du soudeur"
+   286→          className="w-full max-w-[420px] xs:max-w-[480px] sm:max-w-[560px] md:max-w-[630px] mx-auto my-4 sm:my-[15px] drop-shadow-[0_24px_34px_rgba(0,0,0,0.6)]"
+   287→          loading="eager"
+   288→        />
+   289→        <p className="max-w-[680px] mx-auto mb-5 sm:mb-6 text-muted-foreground text-[14px] sm:text-base text-center leading-relaxed">
+   290→          Ce ne sont ni des cours ni des leçons à regarder. C’est une{' '}
+   291→          <strong className="text-primary font-bold">
+   292→            bibliothèque numérique
+   293→          </strong>{' '}
+   294→          de plus de 4 000 plans éprouvés, avec les cotes, les listes de
+   295→          matériaux, les coûts, les prix conseillés et les bénéfices estimés.{' '}
+   296→          <strong className="text-primary font-bold">
+   297→            Accédez-y immédiatement
+   298→          </strong>{' '}
+   299→          pour commencer à fabriquer dès aujourd’hui.
+   300→        </p>
+   301→        <CTAButton href="#packs">Accéder maintenant</CTAButton>
+   302→      </div>
+   303→    </section>
+   304→  )
+   305→}
+   306→
+   307→function Problems() {
+   308→  return (
+   309→    <section className="py-12 sm:py-16 lg:py-[70px] px-4 sm:px-5 bg-secondary text-center">
+   310→      <div className="w-full max-w-[1050px] mx-auto">
+   311→        <SectionHeading
+   312→          title="Cela vous parle, dans votre atelier ?"
+   313→          lead="Vous travaillez dur chaque jour, mais les bénéfices ne suivent jamais."
+   314→        />
+   315→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8 sm:mt-10 text-left">
+   316→          {PROBLEM_CARDS.map((c, i) => (
+   317→            <article
+   318→              key={i}
+   319→              className="bg-card border border-border rounded-[10px] p-5 sm:p-6"
+   320→            >
+   321→              <div className="text-primary text-2xl leading-none">{c.icon}</div>
+   322→              <h3 className="text-[17px] sm:text-lg font-bold mt-3 mb-2 leading-snug">
+   323→                {c.title}
+   324→              </h3>
+   325→              <p className="text-[14px] sm:text-[15px] text-muted-foreground leading-relaxed m-0">
+   326→                {c.text}
+   327→              </p>
+   328→            </article>
+   329→          ))}
+   330→        </div>
+   331→        <p className="italic text-[#bcc0c7] max-w-[690px] mx-auto mt-7 sm:mt-8 text-[15px] sm:text-base leading-relaxed">
+   332→          Le problème n’est pas le manque de travail. C’est de ne pas avoir le
+   333→          bon plan sous la main quand un client appelle.
+   334→        </p>
+   335→      </div>
+   336→    </section>
+   337→  )
+   338→}
+   339→
+   340→function Intro() {
+   341→  return (
+   342→    <section className="py-12 sm:py-16 lg:py-[70px] px-4 sm:px-5 text-center">
+   343→      <div className="w-full max-w-[760px] mx-auto">
+   344→        <h2 className="text-[27px] sm:text-[32px] md:text-[38px] leading-[1.15] tracking-[-0.035em] text-primary font-bold m-0 mb-4">
+   345→          Qu’est-ce que Le trésor du soudeur ?
+   346→        </h2>
+   347→        <p className="max-w-[735px] mx-auto mb-4 text-[15px] sm:text-base text-[#c0c1c5] leading-relaxed">
+   348→          C’est une{' '}
+   349→          <strong className="text-primary font-bold">
+   350→            bibliothèque numérique de plus de 4 000 plans de métallerie
+   351→          </strong>{' '}
+   352→          classés par catégorie : portails, grilles de protection, mobilier
+   353→          industriel, remorques, structures métalliques, abris, escaliers,
+   354→          garde-corps et bien plus.
+   355→        </p>
+   356→        <p className="max-w-[735px] mx-auto mb-4 text-[15px] sm:text-base text-[#c0c1c5] leading-relaxed">
+   357→          Chaque plan contient ce qu’il vous faut pour fabriquer et vendre :
+   358→          cotes précises, schémas de coupe, liste de matériaux, type et
+   359→          épaisseur des profilés, coût de fabrication, prix de vente conseillé
+   360→          et bénéfice estimé.
+   361→        </p>
+   362→        <p className="max-w-[735px] mx-auto mb-5 text-[15px] sm:text-base text-[#c0c1c5] leading-relaxed">
+   363→          <strong className="text-primary font-bold">
+   364→            Ouvrez un plan sur votre téléphone, relevez les cotes, fabriquez et
+   365→            vendez. C’est aussi simple que cela.
+   366→          </strong>
+   367→        </p>
+   368→        <img
+   369→          src="/assets/pack-pro.webp"
+   370→          width={1100}
+   371→          height={1100}
+   372→          alt="Présentation de la bibliothèque de plans"
+   373→          className="w-full max-w-[420px] xs:max-w-[500px] sm:max-w-[650px] mx-auto my-3 sm:my-4 drop-shadow-[0_18px_32px_#000]"
+   374→          loading="lazy"
+   375→        />
+   376→        <CTAButton href="#packs">Voir le pack complet</CTAButton>
+   377→      </div>
+   378→    </section>
+   379→  )
+   380→}
+   381→
+   382→function Gallery() {
+   383→  const renderRow = (
+   384→    items: { src: string; alt: string }[],
+   385→    reverse = false
+   386→  ) => {
+   387→    const doubled = [...items, ...items]
+   388→    return (
+   389→      <div
+   390→        className={`flex gap-3 sm:gap-4 w-max ${
+   391→          reverse ? 'animate-marquee-reverse' : 'animate-marquee'
+   392→        }`}
+   393→      >
+   394→        {doubled.map((img, i) => (
+   395→          <img
+   396→            key={i}
+   397→            src={img.src}
+   398→            alt={img.alt}
+   399→            className="w-[132px] h-[140px] sm:w-[175px] sm:h-[175px] object-contain rounded-[10px] bg-[#e8e9e9] p-1 shadow-[0_7px_18px_#0004] flex-shrink-0"
+   400→            loading="lazy"
+   401→          />
+   402→        ))}
+   403→      </div>
+   404→    )
+   405→  }
+   406→
+   407→  return (
+   408→    <section className="py-12 sm:py-16 lg:py-[70px] px-0 sm:px-5 bg-secondary text-center overflow-hidden">
+   409→      <div className="w-full max-w-[1050px] mx-auto px-4 sm:px-5">
+   410→        <SectionHeading
+   411→          title="Découvrez les plans"
+   412→          lead="Plus de 4 000 plans prêts à fabriquer : portails, mobilier industriel, remorques, structures métalliques, abris et bien plus."
+   413→        />
+   414→      </div>
+   415→      <div
+   416→        className="marquee-pause mt-8 sm:mt-10 flex flex-col gap-4 sm:gap-[18px] overflow-hidden"
+   417→        aria-label="Exemples de plans de métallerie"
+   418→      >
+   419→        {renderRow(GALLERY_ROW_1)}
+   420→        {renderRow(GALLERY_ROW_2, true)}
+   421→        {renderRow(GALLERY_ROW_3)}
+   422→      </div>
+   423→    </section>
+   424→  )
+   425→}
+   426→
+   427→function Features() {
+   428→  return (
+   429→    <section className="py-12 sm:py-16 lg:py-[70px] px-4 sm:px-5 text-center">
+   430→      <div className="w-full max-w-[1050px] mx-auto">
+   431→        <SectionHeading
+   432→          title="Que contient chaque plan ?"
+   433→          lead="Tout ce qu’il vous faut pour ouvrir le fichier, fabriquer la pièce et la vendre avec une marge. Sans perdre des heures à dessiner ou à calculer."
+   434→        />
+   435→        <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-3 mt-7 sm:mt-8 text-left">
+   436→          {FEATURES.map((f, i) => (
+   437→            <div
+   438→              key={i}
+   439→              className="flex items-center gap-3 px-4 py-3.5 bg-card border border-border rounded-lg text-[14px] sm:text-sm"
+   440→            >
+   441→              <span className="text-primary text-xl font-bold flex-shrink-0">
+   442→                {f.icon}
+   443→              </span>
+   444→              <span className="text-foreground">{f.label}</span>
+   445→            </div>
+   446→          ))}
+   447→        </div>
+   448→
+   449→        <div className="border border-[#76511f] rounded-xl bg-secondary p-5 sm:p-7 mt-8 shadow-[0_0_35px_rgba(233,148,42,0.07)]">
+   450→          <h3 className="text-primary text-xl sm:text-2xl font-bold m-0">
+   451→            ♧ 4 bonus offerts
+   452→          </h3>
+   453→          <p className="text-muted-foreground text-[14px] sm:text-base mt-1.5 mb-0 mx-auto max-w-[680px]">
+   454→            Inclus sans supplément avec Le trésor du soudeur
+   455→          </p>
+   456→          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-5 sm:mt-6">
+   457→            {BONUSES.map((b, i) => (
+   458→              <article
+   459→                key={i}
+   460→                className="bg-card border border-border rounded-[10px] p-2.5 sm:p-3.5 text-center"
+   461→              >
+   462→                <img
+   463→                  src={b.img}
+   464→                  alt={b.alt}
+   465→                  className="h-[145px] xs:h-[180px] sm:h-[225px] w-full object-contain mx-auto"
+   466→                  loading="lazy"
+   467→                />
+   468→                <small className="block text-primary font-extrabold mt-2 sm:mt-3 mb-1 text-[11px] sm:text-xs">
+   469→                  {b.label}
+   470→                </small>
+   471→                <strong className="text-[12px] xs:text-[13px] sm:text-[15px] font-semibold leading-snug block">
+   472→                  {b.title}
+   473→                </strong>
+   474→              </article>
+   475→            ))}
+   476→          </div>
+   477→        </div>
+   478→      </div>
+   479→    </section>
+   480→  )
+   481→}
+   482→
+   483→function Benefits() {
+   484→  return (
+   485→    <section className="py-12 sm:py-16 lg:py-[70px] px-4 sm:px-5 bg-secondary text-center">
+   486→      <div className="w-full max-w-[1050px] mx-auto">
+   487→        <SectionHeading
+   488→          title="Ce qui change dans votre atelier"
+   489→          lead="Moins de temps perdu. Plus de pièces terminées. Plus d’argent dans votre poche."
+   490→        />
+   491→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8 sm:mt-10 text-left">
+   492→          {BENEFITS.map((b, i) => (
+   493→            <article
+   494→              key={i}
+   495→              className="bg-card border border-border rounded-[10px] p-5 sm:p-6"
+   496→            >
+   497→              <div className="text-primary text-2xl leading-none">
+   498→                {b.icon}
+   499→              </div>
+   500→              <h3 className="text-[17px] sm:text-lg font-bold mt-3 mb-2 leading-snug">
+   501→                {b.title}
+   502→              </h3>
+   503→              <p className="text-[14px] sm:text-[15px] text-muted-foreground leading-relaxed m-0">
+   504→                {b.text}
+   505→              </p>
+   506→            </article>
+   507→          ))}
+   508→        </div>
+   509→      </div>
+   510→    </section>
+   511→  )
+   512→}
+   513→
+   514→function PriceCard({
+   515→  variant,
+   516→  image,
+   517→  alt,
+   518→  title,
+   519→  oldPrice,
+   520→  todayOnly,
+   521→  price,
+   522→  features,
+   523→  ctaLabel,
+   524→  onCheckout,
+   525→}: {
+   526→  variant: 'base' | 'pro'
+   527→  image: string
+   528→  alt: string
+   529→  title: string
+   530→  oldPrice?: string
+   531→  todayOnly?: boolean
+   532→  price: string
+   533→  features: string[]
+   534→  ctaLabel: string
+   535→  onCheckout: () => void
+   536→}) {
+   537→  const isPro = variant === 'pro'
+   538→  return (
+   539→    <article
+   540→      className={`relative bg-card border rounded-[10px] p-5 sm:p-6 flex flex-col ${
+   541→        isPro
+   542→          ? 'border-[#a56b27] shadow-[0_0_30px_rgba(233,148,42,0.1)]'
+   543→          : 'border-border'
+   544→      }`}
+   545→    >
+   546→      {isPro && (
+   547→        <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[11px] sm:text-xs font-extrabold rounded-full px-4 sm:px-[18px] py-1.5 sm:py-[7px] whitespace-nowrap">
+   548→          Le plus complet
+   549→        </span>
+   550→      )}
+   551→      <img
+   552→        src={image}
+   553→        alt={alt}
+   554→        className="h-[180px] xs:h-[210px] sm:h-[230px] w-full object-contain"
+   555→        loading="lazy"
+   556→      />
+   557→      <h3 className="text-center text-xl sm:text-[22px] font-bold mt-1.5 mb-2">
+   558→        {title}
+   559→      </h3>
+   560→      {oldPrice && (
+   561→        <div className="text-center line-through text-destructive text-lg sm:text-[21px] font-extrabold">
+   562→          {oldPrice}
+   563→        </div>
+   564→      )}
+   565→      {todayOnly && (
+   566→        <div className="text-center text-destructive text-[12px] sm:text-[13px] font-extrabold">
+   567→          Seulement aujourd’hui !
+   568→        </div>
+   569→      )}
+   570→      {oldPrice && (
+   571→        <div className="text-center text-muted-foreground text-[12px] sm:text-[13px] mt-1">
+   572→          pour
+   573→        </div>
+   574→      )}
+   575→      <div className="text-primary text-[36px] sm:text-[43px] font-extrabold text-center leading-tight">
+   576→        {price}
+   577→      </div>
+   578→      <ul className="list-none p-0 m-5 sm:my-[22px] space-y-2.5">
+   579→        {features.map((f, i) => {
+   580→          const isBonus = f.startsWith('Bonus')
+   581→          return (
+   582→            <li
+   583→              key={i}
+   584→              className={`flex gap-2 items-start text-[13px] sm:text-sm leading-snug ${
+   585→                isBonus ? 'text-foreground font-semibold' : 'text-[#d4d5d7]'
+   586→              }`}
+   587→            >
+   588→              <span className="text-primary font-extrabold flex-shrink-0">
+   589→                ✓
+   590→              </span>
+   591→              <span>{f}</span>
+   592→            </li>
+   593→          )
+   594→        })}
+   595→      </ul>
+   596→      <CTAButton variant="block" onClick={onCheckout} className="w-full mt-auto">
+   597→        {ctaLabel}
+   598→      </CTAButton>
+   599→      <p className="text-[11px] sm:text-xs text-[#828790] text-center mt-2.5 mb-0">
+   600→        Accès numérique immédiat par e-mail
+   601→      </p>
+   602→    </article>
+   603→  )
+   604→}
+   605→
+   606→function Pricing({ onCheckout }: { onCheckout: (plan: 'base' | 'pro') => void }) {
+   607→  return (
+   608→    <section
+   609→      id="packs"
+   610→      className="pt-14 sm:pt-[68px] lg:pt-[78px] pb-12 sm:pb-16 lg:pb-[70px] px-4 sm:px-5 text-center scroll-mt-4"
+   611→    >
+   612→      <div className="w-full max-w-[1050px] mx-auto">
+   613→        <SectionHeading
+   614→          title="Choisissez votre pack et commencez aujourd’hui"
+   615→          lead="Paiement unique · Accès numérique immédiat · Sans abonnement"
+   616→        />
+   617→        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-6 md:gap-[26px] max-w-[900px] mx-auto mt-9 sm:mt-9 items-stretch text-left">
+   618→          <PriceCard
+   619→            variant="base"
+   620→            image="/assets/pack-base.webp"
+   621→            alt="Forfait de base, plus de 3 000 plans"
+   622→            title="Forfait de base"
+   623→            price="9 €"
+   624→            features={BASE_PLAN_FEATURES}
+   625→            ctaLabel="Je veux ce pack maintenant"
+   626→            onCheckout={() => onCheckout('base')}
+   627→          />
+   628→          <PriceCard
+   629→            variant="pro"
+   630→            image="/assets/pack-pro.webp"
+   631→            alt="Forfait professionnel, plus de 4 000 plans"
+   632→            title="Forfait professionnel"
+   633→            oldPrice="30 €"
+   634→            todayOnly
+   635→            price="17 €"
+   636→            features={PRO_PLAN_FEATURES}
+   637→            ctaLabel="Obtenir le pack complet"
+   638→            onCheckout={() => onCheckout('pro')}
+   639→          />
+   640→        </div>
+   641→      </div>
+   642→    </section>
+   643→  )
+   644→}
+   645→
+   646→function Guarantee() {
+   647→  return (
+   648→    <section className="pt-10 sm:pt-[52px] pb-14 sm:pb-[76px] px-4 sm:px-5 text-center">
+   649→      <div className="w-full max-w-[760px] mx-auto">
+   650→        <div className="text-primary text-[36px] sm:text-[42px] mb-2 leading-none">
+   651→          ♢
+   652→        </div>
+   653→        <h2 className="text-primary text-[24px] sm:text-[29px] font-bold m-0 mb-3 leading-tight">
+   654→          Garantie intégrale de 7 jours
+   655→        </h2>
+   656→        <p className="text-muted-foreground text-[14px] sm:text-base leading-relaxed m-0">
+   657→          Essayez Le trésor du soudeur pendant 7 jours. S’il ne vous convient
+   658→          pas, demandez un remboursement par e-mail et nous vous rendrons{' '}
+   659→          <strong className="text-white font-bold">100 % de votre argent</strong>
+   660→          . Sans justification ni complication. Nous prenons le risque.
+   661→        </p>
+   662→      </div>
+   663→    </section>
+   664→  )
+   665→}
+   666→
+   667→function FaqItem({ q, a }: { q: string; a: string }) {
+   668→  return (
+   669→    <details className="bg-card border border-border rounded-lg m-2 group">
+   670→      <summary className="list-none cursor-pointer px-5 sm:px-6 py-4 sm:py-[17px] text-primary font-bold flex justify-between gap-5 items-center group-open:pb-4">
+   671→        <span>{q}</span>
+   672→        <span className="text-xl flex-shrink-0 transition-transform group-open:rotate-180">
+   673→          ⌄
+   674→        </span>
+   675→      </summary>
+   676→      <p className="border-t border-border m-0 px-5 sm:px-6 py-4 text-[#c2c6cb] text-[14px] sm:text-[15px] leading-relaxed">
+   677→        {a}
+   678→      </p>
+   679→    </details>
+   680→  )
+   681→}
+   682→
+   683→function Faq() {
+   684→  return (
+   685→    <section className="py-12 sm:py-16 lg:py-[70px] px-4 sm:px-5 bg-secondary text-center">
+   686→      <div className="w-full max-w-[900px] mx-auto">
+   687→        <h2 className="text-[27px] sm:text-[32px] md:text-[38px] leading-[1.15] tracking-[-0.035em] text-primary font-bold m-0 mb-2">
+   688→          Questions fréquentes
+   689→        </h2>
+   690→        <div className="text-left mt-5 sm:mt-7">
+   691→          {FAQS.map((item, i) => (
+   692→            <FaqItem key={i} q={item.q} a={item.a} />
+   693→          ))}
+   694→        </div>
+   695→      </div>
+   696→    </section>
+   697→  )
+   698→}
+   699→
+   700→function Footer() {
+   701→  const [mounted, setMounted] = useState(false)
+   702→  useEffect(() => {
+   703→    // eslint-disable-next-line react-hooks/set-state-in-effect
+   704→    setMounted(true)
+   705→  }, [])
+   706→  const year = mounted ? new Date().getFullYear() : ''
+   707→  return (
+   708→    <footer className="mt-auto py-6 sm:py-8 px-5 text-center border-t border-[#24272d] text-[#777c84] text-xs sm:text-[13px] safe-area-bottom">
+   709→      © {year} Le trésor du soudeur
+   710→    </footer>
+   711→  )
+   712→}
+   713→
+   714→function Notice({ message, show }: { message: string; show: boolean }) {
+   715→  if (!show) return null
+   716→  return (
+   717→    <div
+   718→      role="status"
+   719→      aria-live="polite"
+   720→      className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-[#202a34] text-white border border-primary rounded-lg px-5 py-4 z-50 shadow-[0_12px_30px_rgba(0,0,0,0.5)] max-w-[92vw] sm:max-w-[550px] text-center text-[13px] sm:text-sm"
+   721→    >
+   722→      {message}
+   723→    </div>
+   724→  )
+   725→}
+   726→
+   727→// ============================================================
+   728→// PAGE
+   729→// ============================================================
+   730→export default function Home() {
+   731→  const [notice, setNotice] = useState<{ msg: string; show: boolean }>({
+   732→    msg: '',
+   733→    show: false,
+   734→  })
+   735→
+   736→  const handleCheckout = (plan: 'base' | 'pro') => {
+   737→    const destination =
+   738→      plan === 'base' ? CONFIG.checkoutBase : CONFIG.checkoutPro
+   739→    if (destination && /^https:\/\//i.test(destination)) {
+   740→      window.location.href = destination
+   741→      return
+   742→    }
+   743→    setNotice({
+   744→      msg: 'Le lien de paiement de ce pack sera disponible prochainement.',
+   745→      show: true,
+   746→    })
+   747→    setTimeout(() => setNotice((n) => ({ ...n, show: false })), 4500)
+   748→  }
+   749→
+   750→  return (
+   751→    <main className="flex-1 flex flex-col">
+   752→      <Ribbon />
+   753→      <Hero />
+   754→      <Problems />
+   755→      <Intro />
+   756→      <Gallery />
+   757→      <Features />
+   758→      <Benefits />
+   759→      <Pricing onCheckout={handleCheckout} />
+   760→      <Guarantee />
+   761→      <Faq />
+   762→      <Footer />
+   763→      <Notice message={notice.msg} show={notice.show} />
+   764→    </main>
+   765→  )
+   766→}
+   767→
