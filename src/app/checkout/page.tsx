@@ -362,31 +362,7 @@ function ErrorState({
         {message}
       </p>
 
-      {isEnvMissing && (
-        <div className="bg-[#0a0b0d] border border-[#26303c] rounded-lg p-4 mb-6 max-w-[440px] text-left">
-          <p className="text-[13px] font-bold text-primary mb-2">
-            Diagnostic
-          </p>
-          <p className="text-[12px] text-muted-foreground leading-relaxed mb-3">
-            As variáveis de ambiente Stripe não chegaram no runtime.
-            Clique no link abaixo para ver exatamente quais variáveis estão
-            configuradas:
-          </p>
-          <a
-            href="/api/debug/env"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-[12.5px] text-primary font-bold underline underline-offset-2 hover:text-[#ffc064] break-all"
-          >
-            /api/debug/env →
-          </a>
-          <p className="text-[11.5px] text-muted-foreground mt-3 leading-relaxed">
-            <strong className="text-foreground">Causa mais comum:</strong>{' '}
-            a variável foi salva no painel da Vercel, mas não foi feito
-            redeploy depois. Vá em Deployments → ⋯ → Redeploy.
-          </p>
-        </div>
-      )}
+      {isEnvMissing && <EnvDiagnosticBox />}
 
       <button
         type="button"
@@ -395,6 +371,178 @@ function ErrorState({
       >
         Retour aux offres
       </button>
+    </div>
+  )
+}
+
+/**
+ * Auto-fetches /api/debug/env and shows the status of each Stripe env var
+ * inline. The user does not need to open another URL — the diagnostic
+ * appears right in the error page.
+ */
+function EnvDiagnosticBox() {
+  const [data, setData] = useState<{
+    vars?: Array<{
+      name: string
+      status: 'set' | 'empty' | 'missing'
+      preview: string
+      required: boolean
+      hint: string
+    }>
+    environment?: {
+      isVercel?: boolean
+      vercelEnv?: string
+      vercelUrl?: string
+    }
+    error?: string
+  } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/debug/env')
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`)
+        }
+        const json = (await res.json()) as typeof data
+        if (!cancelled) {
+          setData(json)
+          setLoading(false)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setData({
+            error: err instanceof Error ? err.message : 'Unknown error',
+          })
+          setLoading(false)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return (
+    <div className="bg-[#0a0b0d] border border-[#26303c] rounded-lg p-4 mb-6 max-w-[460px] text-left">
+      <p className="text-[13px] font-bold text-primary mb-2 flex items-center gap-2">
+        <span>🔍</span>
+        Diagnostic automatique
+      </p>
+
+      {loading && (
+        <p className="text-[12px] text-muted-foreground">
+          Vérification des variables d&apos;environnement…
+        </p>
+      )}
+
+      {!loading && data?.error && (
+        <p className="text-[12px] text-destructive">
+          Erreur lors du diagnostic : {data.error}
+        </p>
+      )}
+
+      {!loading && data?.vars && (
+        <>
+          <p className="text-[12px] text-muted-foreground mb-3 leading-relaxed">
+            As variáveis de ambiente Stripe não chegaram no runtime. Veja
+            abaixo quais estão configuradas:
+          </p>
+
+          <ul className="space-y-2 mb-3">
+            {data.vars.map((v) => {
+              const isOk = v.status === 'set'
+              const isMissing = v.status === 'missing'
+              return (
+                <li
+                  key={v.name}
+                  className={`flex items-start gap-2 text-[12px] leading-snug ${
+                    isOk ? 'text-foreground' : 'text-destructive'
+                  }`}
+                >
+                  <span className="text-[14px] flex-shrink-0 mt-px">
+                    {isOk ? '✅' : isMissing ? '❌' : '⚠️'}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <code className="font-mono text-[11.5px] font-bold break-all">
+                        {v.name}
+                      </code>
+                      <span className="text-[10.5px] text-muted-foreground">
+                        {isOk ? `(OK — ${v.preview})` : isMissing ? '(manquante)' : '(vide)'}
+                      </span>
+                    </div>
+                    {v.required && !isOk && (
+                      <p className="text-[10.5px] text-muted-foreground mt-0.5 leading-snug">
+                        {v.hint}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+
+          {data.environment && (
+            <p className="text-[10.5px] text-muted-foreground mb-3 leading-relaxed border-t border-[#26303c] pt-2">
+              Ambiente:{' '}
+              <strong className="text-foreground">
+                {data.environment.isVercel
+                  ? `Vercel (${data.environment.vercelEnv ?? 'unknown'})`
+                  : 'Local development'}
+              </strong>
+            </p>
+          )}
+
+          <div className="bg-[#161e2a] border border-[#3a4250] rounded p-3 mt-2">
+            <p className="text-[11.5px] font-bold text-foreground mb-1.5">
+              🚀 Como corrigir:
+            </p>
+            <ol className="text-[11px] text-muted-foreground space-y-1.5 list-decimal list-inside leading-relaxed">
+              <li>
+                Abra o painel da Vercel:{' '}
+                <a
+                  href="https://vercel.com/dashboard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline underline-offset-2 hover:text-[#ffc064] break-all"
+                >
+                  vercel.com/dashboard
+                </a>{' '}
+                → clique no seu projeto → <strong>Settings</strong> →{' '}
+                <strong>Environment Variables</strong>
+              </li>
+              <li>
+                Para cada variável com ❌ acima, clique em{' '}
+                <strong>&quot;Add New&quot;</strong>, cole o nome exato (ex.:{' '}
+                <code className="font-mono">STRIPE_SECRET_KEY</code>), cole o
+                valor, marque as <strong>3 caixas</strong> (Production +
+                Preview + Development) e salve
+              </li>
+              <li>
+                <strong className="text-foreground">CRÍTICO:</strong> vá na
+                aba <strong>Deployments</strong> → clique nos 3 pontinhos{' '}
+                <code className="font-mono">⋯</code> ao lado do deploy mais
+                recente → <strong>Redeploy</strong> → desmarque &quot;Use
+                existing Build Cache&quot; → clique em <strong>Redeploy</strong>
+              </li>
+              <li>
+                Aguarde o status ficar <strong>Ready</strong> (bolinha verde,
+                ~1 min), depois recarregue esta página
+              </li>
+            </ol>
+          </div>
+
+          <p className="text-[11px] text-[#9aa0a8] mt-3 leading-relaxed">
+            <strong className="text-foreground">Causa mais comum:</strong>{' '}
+            a variável foi salva no painel da Vercel, mas não foi feito
+            redeploy depois. A Vercel NÃO redeploy automaticamente quando
+            só mudam env vars — precisa forçar manualmente.
+          </p>
+        </>
+      )}
     </div>
   )
 }
