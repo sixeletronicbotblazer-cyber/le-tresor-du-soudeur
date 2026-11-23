@@ -1,12 +1,17 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
 
+// Inter with latin + latin-ext subsets (latin-ext covers French accents).
+// display: 'swap' prevents FOIT — text is visible immediately with the
+// fallback font, then swaps to Inter when ready.
 const inter = Inter({
   variable: "--font-inter",
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext"],
   display: "swap",
+  // Don't preload every weight — only the ones actually used (400 + 700 + 800).
+  // Next/font already handles this automatically.
+  weight: ["400", "700", "800"],
 });
 
 export const metadata: Metadata = {
@@ -43,6 +48,7 @@ export const viewport: Viewport = {
   themeColor: "#0a0b0d",
   width: "device-width",
   initialScale: 1,
+  // Disable zoom-blocking so users can pinch-zoom on mobile (a11y).
   maximumScale: 5,
 };
 
@@ -53,11 +59,28 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr" suppressHydrationWarning className="dark">
+      <head>
+        {/* Preconnect to Google Fonts (used by next/font) so the font
+            request starts as early as possible. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        {/* Preload the hero image so it starts downloading immediately —
+            before the JS bundle finishes parsing. */}
+        <link
+          rel="preload"
+          as="image"
+          href="/assets/pack-pro.webp"
+          fetchPriority="high"
+        />
+      </head>
       <body
         className={`${inter.variable} font-sans antialiased bg-background text-foreground min-h-screen flex flex-col`}
       >
         {children}
-        <Toaster />
       </body>
     </html>
   );

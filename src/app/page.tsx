@@ -308,11 +308,15 @@ function Hero() {
         </p>
         <img
           src="/assets/pack-pro.webp"
-          width={1100}
-          height={1100}
+          width={900}
+          height={900}
           alt="Collection de plans de métallerie Le trésor du soudeur"
           className="w-full max-w-[420px] xs:max-w-[480px] sm:max-w-[560px] md:max-w-[630px] mx-auto my-4 sm:my-[15px] drop-shadow-[0_24px_34px_rgba(0,0,0,0.6)]"
+          // Hero image — load eagerly with high priority so it appears
+          // before the fold. Preloaded in <head> for the fastest start.
           loading="eager"
+          fetchPriority="high"
+          decoding="async"
         />
         <p className="max-w-[680px] mx-auto mb-5 sm:mb-6 text-muted-foreground text-[14px] sm:text-base text-center leading-relaxed">
           Ce ne sont ni des cours ni des leçons à regarder. C’est une{' '}
@@ -395,11 +399,12 @@ function Intro() {
         </p>
         <img
           src="/assets/pack-pro.webp"
-          width={1100}
-          height={1100}
+          width={900}
+          height={900}
           alt="Présentation de la bibliothèque de plans"
           className="w-full max-w-[420px] xs:max-w-[500px] sm:max-w-[650px] mx-auto my-3 sm:my-4 drop-shadow-[0_18px_32px_#000]"
           loading="lazy"
+          decoding="async"
         />
         <CTAButton href="#packs">Voir le pack complet</CTAButton>
       </div>
@@ -878,11 +883,12 @@ function UpsellModal({
           {/* Mockup */}
           <img
             src="/assets/pack-pro.webp"
-            width={1100}
-            height={1100}
+            width={900}
+            height={900}
             alt="Forfait professionnel — plus de 4 000 plans et 4 bonus"
             className="w-full max-w-[200px] sm:max-w-[220px] mx-auto mb-3 drop-shadow-[0_12px_24px_rgba(0,0,0,0.55)]"
-            loading="eager"
+            loading="lazy"
+            decoding="async"
           />
 
           {/* Title */}

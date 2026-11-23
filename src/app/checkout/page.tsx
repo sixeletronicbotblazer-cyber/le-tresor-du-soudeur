@@ -7,17 +7,38 @@ import type { StripeEmbeddedCheckout } from '@stripe/stripe-js'
 import { PLANS, isPlanId, type PlanId, type Plan } from '@/lib/plans'
 
 // ============================================================
-// Stripe.js singleton — loaded once, reused across renders.
-// The publishable key is safe to expose to the client.
+// Stripe.js singleton — loaded lazily on first call, reused after.
+// We do NOT load the Stripe.js external script until the user actually
+// reaches /checkout, so the home page (the heaviest page) doesn't pay
+// for it.
 // ============================================================
 const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-if (!stripePublishableKey) {
-  // Will be caught by the page render below with a friendly message.
-  console.error('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set.')
+let stripePromise: ReturnType<typeof loadStripe> | null = null
+function getStripe(): Promise<NonNullable<Awaited<ReturnType<typeof loadStripe>>>> {
+  if (!stripePublishableKey) {
+    return Promise.reject(
+      new Error('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set.')
+    )
+  }
+  if (!stripePromise) {
+    stripePromise = loadStripe(stripePublishableKey)
+  }
+  return stripePromise.then((stripe) => {
+    if (!stripe) {
+      return Promise.reject(new Error('Stripe.js failed to load.'))
+    }
+    return stripe
+  })
 }
-const stripePromise = stripePublishableKey
-  ? loadStripe(stripePublishableKey)
-  : Promise.reject(new Error('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set.'))
+
+// ============================================================
+// Per-plan session cache.
+// If the user navigates Home → Checkout → Back (browser button) →
+// Checkout again for the same plan, we reuse the existing client
+// secret instead of creating a new Checkout Session. The Stripe
+// session is valid for 24h after creation.
+// ============================================================
+const clientSecretCache = new Map<PlanId, string>()
 
 // ============================================================
 // Helpers
@@ -74,37 +95,46 @@ function CheckoutInner() {
   }, [statusParam, planIdParam])
 
   // Create the Checkout Session and mount the embedded form.
+  // Caches the client_secret per plan so the user does not pay the
+  // 400ms Stripe API call again if they bounce back to the same plan.
   const mountCheckout = useCallback(
     async (planId: PlanId) => {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch('/api/checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan: planId }),
-        })
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as {
-            error?: string
-            detail?: string
+        let clientSecret = clientSecretCache.get(planId)
+        if (!clientSecret) {
+          const res = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan: planId }),
+          })
+          if (!res.ok) {
+            const body = (await res.json().catch(() => ({}))) as {
+              error?: string
+              detail?: string
+            }
+            throw new Error(
+              body.error
+                ? `${body.error}${body.detail ? ` (${body.detail})` : ''}`
+                : `HTTP ${res.status}`
+            )
           }
-          throw new Error(
-            body.error
-              ? `${body.error}${body.detail ? ` (${body.detail})` : ''}`
-              : `HTTP ${res.status}`
-          )
-        }
-        const { client_secret: clientSecret } = (await res.json()) as {
-          client_secret: string
-          session_id: string
-          plan: string
+          const data = (await res.json()) as {
+            client_secret: string
+            session_id: string
+            plan: string
+          }
+          clientSecret = data.client_secret
+          if (clientSecret) {
+            clientSecretCache.set(planId, clientSecret)
+          }
         }
         if (!clientSecret) {
           throw new Error('Stripe did not return a client_secret.')
         }
 
-        const stripe = await stripePromise
+        const stripe = await getStripe()
         // New Stripe.js API (v10+): createEmbeddedCheckoutPage replaces
         // the deprecated initEmbeddedCheckout. Returns an instance we
         // mount into a DOM node. onComplete fires after successful payment.
@@ -120,7 +150,11 @@ function CheckoutInner() {
 
         // If the component re-mounted, tear down the previous instance.
         checkoutRef.current?.unmount()
-        checkout.mount(containerRef.current)
+        const container = containerRef.current
+        if (!container) {
+          throw new Error('Checkout container is not ready.')
+        }
+        checkout.mount(container)
         checkoutRef.current = checkout
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
@@ -262,8 +296,12 @@ function SuccessState({ plan }: { plan: Plan }) {
       </p>
       <img
         src={plan.image}
+        width={220}
+        height={220}
         alt={plan.name}
         className="w-full max-w-[220px] mx-auto mb-6 drop-shadow-[0_12px_24px_rgba(0,0,0,0.5)]"
+        loading="eager"
+        decoding="async"
       />
       <a
         href="/"
@@ -285,8 +323,12 @@ function ProductHeader({ plan }: { plan: Plan }) {
       <div className="flex flex-col xs:flex-row gap-4 items-center xs:items-start text-center xs:text-left">
         <img
           src={plan.image}
+          width={140}
+          height={140}
           alt={plan.name}
           className="w-[120px] h-[120px] xs:w-[140px] xs:h-[140px] object-contain rounded-lg flex-shrink-0 bg-[#0a0b0d] p-2"
+          loading="eager"
+          decoding="async"
         />
         <div className="flex-1 min-w-0">
           <h1 className="text-lg sm:text-xl font-bold leading-snug mb-1">
