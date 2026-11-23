@@ -1,16 +1,28 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { loadStripe } from '@stripe/stripe-js'
 import type { StripeEmbeddedCheckout } from '@stripe/stripe-js'
-import { PLANS, isPlanId, type PlanId, type Plan } from '@/lib/plans'
+import {
+  PLANS,
+  BUMPS,
+  isPlanId,
+  isBumpId,
+  sanitizeBumpSelection,
+  computeTotalCents,
+  formatPrice,
+  type PlanId,
+  type Plan,
+  type BumpId,
+  type Bump,
+} from '@/lib/plans'
 
 // ============================================================
 // Stripe.js singleton — loaded lazily on first call, reused after.
 // We do NOT load the Stripe.js external script until the user actually
-// reaches /checkout, so the home page (the heaviest page) doesn't pay
-// for it.
+// clicks "Continue to payment", so the home page (the heaviest page)
+// doesn't pay for it.
 // ============================================================
 const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 let stripePromise: ReturnType<typeof loadStripe> | null = null
@@ -32,22 +44,14 @@ function getStripe(): Promise<NonNullable<Awaited<ReturnType<typeof loadStripe>>
 }
 
 // ============================================================
-// Per-plan session cache.
-// If the user navigates Home → Checkout → Back (browser button) →
-// Checkout again for the same plan, we reuse the existing client
-// secret instead of creating a new Checkout Session. The Stripe
-// session is valid for 24h after creation.
+// Per-(plan,bumps) session cache.
+// The cache key includes the bump selection so the user does NOT re-use
+// a session that has the wrong line items.
+// Stripe sessions are valid for 24h after creation.
 // ============================================================
-const clientSecretCache = new Map<PlanId, string>()
-
-// ============================================================
-// Helpers
-// ============================================================
-function formatPrice(amountCents: number, currency: string): string {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: currency.toUpperCase(),
-  }).format(amountCents / 100)
+const clientSecretCache = new Map<string, string>()
+function cacheKey(planId: PlanId, bumpIds: BumpId[]): string {
+  return `${planId}|${[...bumpIds].sort().join(',')}`
 }
 
 // ============================================================
@@ -64,6 +68,11 @@ function CheckoutInner() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [paid, setPaid] = useState(false)
+
+  // Two-step flow: STEP_REVIEW (bumps selection) → STEP_PAYMENT (Stripe iframe)
+  const [step, setStep] = useState<'review' | 'payment'>('review')
+  // Selected bump ids — always sanitized through the mutual-exclusion rule.
+  const [selectedBumps, setSelectedBumps] = useState<BumpId[]>([])
 
   // The Stripe embedded checkout instance, kept in a ref so we can
   // unmount it cleanly when the page closes.
@@ -86,28 +95,67 @@ function CheckoutInner() {
 
   // If Stripe redirected back here after a 3DS challenge, the user has
   // paid — fetch the session status and show the success screen.
+  // NOTE: this is an optimistic UI flag only. The webhook is the source
+  // of truth — see /api/webhook for delivery logic.
   useEffect(() => {
     if (statusParam !== 'return' || !planIdParam) return
     if (!isPlanId(planIdParam)) return
-    // Optimistically show success; the webhook is the source of truth
-    // for whether the payment really cleared.
     setPaid(true)
   }, [statusParam, planIdParam])
 
-  // Create the Checkout Session and mount the embedded form.
-  // Caches the client_secret per plan so the user does not pay the
-  // 400ms Stripe API call again if they bounce back to the same plan.
+  // ----------------------------------------------------------
+  // Bump selection handlers (with mutual exclusion)
+  // ----------------------------------------------------------
+
+  /**
+   * Toggle a bump on/off, applying the mutual-exclusion rule:
+   *  - combo "pack-atelier" + any individual → keep combo, drop individual.
+   *  - individual + combo already selected → drop combo, add individual.
+   *
+   * This mirrors the server-side sanitizeBumpSelection() so the client
+   * never sends an inconsistent selection.
+   */
+  const toggleBump = useCallback((bumpId: BumpId) => {
+    setSelectedBumps((prev) => {
+      const next = new Set(prev)
+      const bump = BUMPS[bumpId]
+      if (next.has(bumpId)) {
+        // Unchecking.
+        next.delete(bumpId)
+      } else {
+        // Checking — apply exclusion rules.
+        if (bump.isCombo) {
+          // Selecting the combo: uncheck every individual it contains.
+          for (const containedId of bump.contains ?? []) {
+            next.delete(containedId)
+          }
+          next.add(bumpId)
+        } else {
+          // Selecting an individual: uncheck the combo (if present).
+          next.delete('pack-atelier')
+          next.add(bumpId)
+        }
+      }
+      return Array.from(next) as BumpId[]
+    })
+  }, [])
+
+  // ----------------------------------------------------------
+  // Create the Checkout Session and mount the embedded form
+  // ----------------------------------------------------------
+
   const mountCheckout = useCallback(
-    async (planId: PlanId) => {
+    async (planId: PlanId, bumpIds: BumpId[]) => {
       setLoading(true)
       setError(null)
       try {
-        let clientSecret = clientSecretCache.get(planId)
+        const key = cacheKey(planId, bumpIds)
+        let clientSecret = clientSecretCache.get(key)
         if (!clientSecret) {
           const res = await fetch('/api/checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ plan: planId }),
+            body: JSON.stringify({ plan: planId, bumps: bumpIds }),
           })
           if (!res.ok) {
             const body = (await res.json().catch(() => ({}))) as {
@@ -124,10 +172,13 @@ function CheckoutInner() {
             client_secret: string
             session_id: string
             plan: string
+            bumps: BumpId[]
+            total_cents: number
+            total_formatted: string
           }
           clientSecret = data.client_secret
           if (clientSecret) {
-            clientSecretCache.set(planId, clientSecret)
+            clientSecretCache.set(key, clientSecret)
           }
         }
         if (!clientSecret) {
@@ -135,9 +186,6 @@ function CheckoutInner() {
         }
 
         const stripe = await getStripe()
-        // New Stripe.js API (v10+): createEmbeddedCheckoutPage replaces
-        // the deprecated initEmbeddedCheckout. Returns an instance we
-        // mount into a DOM node. onComplete fires after successful payment.
         const checkout = await stripe.createEmbeddedCheckoutPage({
           clientSecret,
           onComplete: () => {
@@ -166,10 +214,20 @@ function CheckoutInner() {
     []
   )
 
+  // When the user advances to the payment step, create the session.
   useEffect(() => {
-    if (!plan || paid) return
-    void mountCheckout(plan.id)
-  }, [plan, paid, mountCheckout])
+    if (!plan || paid || step !== 'payment') return
+    void mountCheckout(plan.id, selectedBumps)
+  }, [plan, paid, step, selectedBumps, mountCheckout])
+
+  // If the user goes back to the review step, unmount the iframe so
+  // they don't see the old form while changing their selection.
+  useEffect(() => {
+    if (step === 'review' && checkoutRef.current) {
+      checkoutRef.current.unmount()
+      checkoutRef.current = null
+    }
+  }, [step])
 
   // Clean up the embedded checkout on unmount.
   useEffect(() => {
@@ -180,9 +238,32 @@ function CheckoutInner() {
     }
   }, [])
 
-  // ============================================================
+  // ----------------------------------------------------------
+  // Derived state
+  // ----------------------------------------------------------
+
+  const totalCents = useMemo(
+    () => (plan ? computeTotalCents(plan.id, selectedBumps) : 0),
+    [plan, selectedBumps]
+  )
+
+  // Bumps that are disabled because the combo is selected.
+  const isBumpDisabled = useCallback(
+    (bumpId: BumpId) => {
+      if (!BUMPS[bumpId].isCombo) {
+        // Individual bumps are disabled when the combo is selected.
+        return selectedBumps.includes('pack-atelier')
+      }
+      // Combo is disabled when... never (it can always be selected,
+      // selecting it just unchecks the individuals).
+      return false
+    },
+    [selectedBumps]
+  )
+
+  // ----------------------------------------------------------
   // Render states
-  // ============================================================
+  // ----------------------------------------------------------
 
   if (error) {
     return (
@@ -204,7 +285,7 @@ function CheckoutInner() {
   if (paid) {
     return (
       <CheckoutShell>
-        <SuccessState plan={plan} />
+        <SuccessState plan={plan} bumpIds={selectedBumps} />
       </CheckoutShell>
     )
   }
@@ -212,19 +293,27 @@ function CheckoutInner() {
   return (
     <CheckoutShell>
       <ProductHeader plan={plan} />
-      {/* The container is always in the DOM so that mountCheckout()
-          can call checkout.mount(containerRef.current) without the
-          reference being null because of an earlier loading-state
-          unmount. The Stripe iframe is appended inside this div once
-          the session is ready. */}
-      <div ref={containerRef} className="min-h-[400px]" aria-busy={loading} />
-      {loading && (
-        <div className="-mt-[400px] flex flex-col items-center justify-center py-20 text-center pointer-events-none">
-          <div className="w-10 h-10 border-2 border-border border-t-primary rounded-full animate-spin mb-4" />
-          <p className="text-muted-foreground text-sm">
-            Préparation du paiement sécurisé…
-          </p>
-        </div>
+
+      {step === 'review' && (
+        <ReviewStep
+          plan={plan}
+          selectedBumps={selectedBumps}
+          onToggleBump={toggleBump}
+          isBumpDisabled={isBumpDisabled}
+          totalCents={totalCents}
+          onContinue={() => setStep('payment')}
+        />
+      )}
+
+      {step === 'payment' && (
+        <PaymentStep
+          plan={plan}
+          selectedBumps={selectedBumps}
+          totalCents={totalCents}
+          loading={loading}
+          onBack={() => setStep('review')}
+          containerRef={containerRef}
+        />
       )}
     </CheckoutShell>
   )
@@ -280,7 +369,8 @@ function ErrorState({
   )
 }
 
-function SuccessState({ plan }: { plan: Plan }) {
+function SuccessState({ plan, bumpIds }: { plan: Plan; bumpIds: BumpId[] }) {
+  const hasBumps = bumpIds.length > 0
   return (
     <div className="flex flex-col items-center justify-center py-8 text-center">
       <div className="w-16 h-16 rounded-full bg-primary/15 border-2 border-primary flex items-center justify-center text-primary text-3xl mb-4">
@@ -290,7 +380,13 @@ function SuccessState({ plan }: { plan: Plan }) {
         Paiement confirmé !
       </h1>
       <p className="text-muted-foreground text-[15px] leading-relaxed mb-6 max-w-[420px]">
-        Merci pour votre achat du <strong className="text-foreground">{plan.name}</strong>.
+        Merci pour votre achat du{' '}
+        <strong className="text-foreground">{plan.name}</strong>
+        {hasBumps && (
+          <>
+            {' '}et de {bumpIds.length === 1 ? 'votre complément' : `vos ${bumpIds.length} compléments`}.
+          </>
+        )}{' '}
         Votre accès numérique est en route — vous recevrez un e-mail avec
         le lien de la bibliothèque dans quelques minutes.
       </p>
@@ -346,6 +442,276 @@ function ProductHeader({ plan }: { plan: Plan }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// ============================================================
+// REVIEW STEP — bump selection + live order summary
+// ============================================================
+
+function ReviewStep({
+  plan,
+  selectedBumps,
+  onToggleBump,
+  isBumpDisabled,
+  totalCents,
+  onContinue,
+}: {
+  plan: Plan
+  selectedBumps: BumpId[]
+  onToggleBump: (id: BumpId) => void
+  isBumpDisabled: (id: BumpId) => boolean
+  totalCents: number
+  onContinue: () => void
+}) {
+  return (
+    <>
+      {/* Bump cards */}
+      <section className="mb-6">
+        <h2 className="text-base sm:text-lg font-bold mb-1 flex items-center gap-2">
+          <span className="text-primary">+</span>
+          Améliorez votre commande
+        </h2>
+        <p className="text-[12px] sm:text-[13px] text-muted-foreground mb-4">
+          Compléments facultatifs, à ajouter avant le paiement.
+        </p>
+
+        <div className="space-y-3">
+          {(Object.values(BUMPS) as Bump[]).map((bump) => (
+            <BumpCard
+              key={bump.id}
+              bump={bump}
+              checked={selectedBumps.includes(bump.id)}
+              disabled={isBumpDisabled(bump.id)}
+              onToggle={() => onToggleBump(bump.id)}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* Order summary */}
+      <OrderSummary
+        plan={plan}
+        selectedBumps={selectedBumps}
+        totalCents={totalCents}
+      />
+
+      {/* Continue to payment */}
+      <button
+        type="button"
+        onClick={onContinue}
+        className="w-full inline-flex items-center justify-center min-h-[54px] px-5 py-3.5 mt-5 rounded-lg bg-primary text-primary-foreground font-extrabold text-[15px] sm:text-base shadow-[0_7px_26px_rgba(233,148,42,0.32)] hover:bg-[#ffc064] hover:-translate-y-0.5 transition-all duration-200"
+      >
+        Continuer vers le paiement · {formatPrice(totalCents, plan.currency)}
+      </button>
+      <p className="text-[11px] text-[#7e848d] text-center mt-3">
+        Paiement sécurisé par Stripe · CB, Visa, Mastercard · Sans abonnement
+      </p>
+    </>
+  )
+}
+
+function BumpCard({
+  bump,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  bump: Bump
+  checked: boolean
+  disabled: boolean
+  onToggle: () => void
+}) {
+  const inputId = `bump-${bump.id}`
+  return (
+    <label
+      htmlFor={inputId}
+      className={`
+        block bg-card border rounded-xl p-3 sm:p-4 cursor-pointer
+        transition-all duration-150
+        ${
+          checked
+            ? 'border-[#a56b27] shadow-[0_0_24px_rgba(233,148,42,0.18)]'
+            : 'border-border hover:border-[#5a6473]'
+        }
+        ${disabled ? 'opacity-45 cursor-not-allowed pointer-events-none' : ''}
+      `}
+    >
+      <div className="flex gap-3 sm:gap-4 items-start">
+        {/* Image */}
+        <img
+          src={bump.image}
+          width={80}
+          height={80}
+          alt={bump.name}
+          className="w-[68px] h-[68px] sm:w-[80px] sm:h-[80px] object-contain rounded-lg flex-shrink-0 bg-[#0a0b0d] p-1.5"
+          loading="lazy"
+          decoding="async"
+        />
+
+        {/* Text */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-[14px] sm:text-[15px] font-bold leading-snug mb-0.5">
+              {bump.name}
+            </h3>
+            <span className="text-primary font-extrabold text-[14px] sm:text-[15px] whitespace-nowrap flex-shrink-0">
+              {formatPrice(bump.amount, bump.currency)}
+            </span>
+          </div>
+          <p className="text-[12px] sm:text-[13px] text-primary font-semibold mb-1">
+            {bump.pitch}
+          </p>
+          <p className="text-[11.5px] sm:text-[12.5px] text-muted-foreground leading-relaxed mb-2 line-clamp-3">
+            {bump.description}
+          </p>
+
+          {/* Checkbox row */}
+          <div className="flex items-center gap-2.5">
+            <input
+              id={inputId}
+              type="checkbox"
+              checked={checked}
+              disabled={disabled}
+              onChange={onToggle}
+              className="w-[18px] h-[18px] rounded-[4px] border-[#3a4250] bg-[#0a0b0d] accent-[#ffae36] flex-shrink-0 cursor-pointer"
+            />
+            <span className="text-[12px] sm:text-[13px] text-foreground font-medium leading-snug">
+              {bump.selectLabel}
+            </span>
+          </div>
+
+          {/* Combo support text */}
+          {bump.isCombo && (
+            <p className="text-[11px] text-[#9aa0a8] mt-2 italic">
+              Séparément : 23 € · Ensemble : 17 €
+            </p>
+          )}
+        </div>
+      </div>
+    </label>
+  )
+}
+
+function OrderSummary({
+  plan,
+  selectedBumps,
+  totalCents,
+}: {
+  plan: Plan
+  selectedBumps: BumpId[]
+  totalCents: number
+}) {
+  const bumps = selectedBumps.map((id) => BUMPS[id])
+  return (
+    <div className="bg-[#0a0b0d] border border-[#26303c] rounded-xl p-4 sm:p-5">
+      <h2 className="text-[13px] sm:text-sm font-bold uppercase tracking-wider text-[#9aa0a8] mb-3">
+        Récapitulatif
+      </h2>
+      <ul className="space-y-2 mb-3">
+        <li className="flex justify-between gap-3 items-start text-[13px] sm:text-[14px]">
+          <span className="text-foreground font-semibold">
+            {plan.name.split(' — ')[0]}
+          </span>
+          <span className="text-foreground font-bold whitespace-nowrap">
+            {formatPrice(plan.amount, plan.currency)}
+          </span>
+        </li>
+        {bumps.map((bump) => (
+          <li
+            key={bump.id}
+            className="flex justify-between gap-3 items-start text-[13px] sm:text-[14px]"
+          >
+            <span className="text-muted-foreground flex items-center gap-1.5">
+              <span className="text-primary text-[10px]">+</span>
+              {bump.name}
+            </span>
+            <span className="text-muted-foreground font-semibold whitespace-nowrap">
+              {formatPrice(bump.amount, bump.currency)}
+            </span>
+          </li>
+        ))}
+        {bumps.length === 0 && (
+          <li className="text-[12px] text-[#7e848d] italic">
+            Aucun complément sélectionné.
+          </li>
+        )}
+      </ul>
+      <div className="border-t border-[#26303c] pt-3 flex justify-between items-baseline gap-3">
+        <span className="text-[14px] sm:text-base font-bold text-foreground">
+          Total
+        </span>
+        <span className="text-primary font-extrabold text-2xl sm:text-3xl leading-none">
+          {formatPrice(totalCents, plan.currency)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// PAYMENT STEP — Stripe embedded iframe + summary banner
+// ============================================================
+
+function PaymentStep({
+  plan,
+  selectedBumps,
+  totalCents,
+  loading,
+  onBack,
+  containerRef,
+}: {
+  plan: Plan
+  selectedBumps: BumpId[]
+  totalCents: number
+  loading: boolean
+  onBack: () => void
+  containerRef: React.RefObject<HTMLDivElement | null>
+}) {
+  const bumps = selectedBumps.map((id) => BUMPS[id])
+  return (
+    <>
+      {/* Compact summary banner at the top of the payment step */}
+      <div className="bg-card border border-border rounded-xl p-4 mb-4">
+        <div className="flex justify-between items-start gap-3 mb-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-bold leading-snug">
+              {plan.name.split(' — ')[0]}
+            </p>
+            {bumps.length > 0 && (
+              <p className="text-[11.5px] text-muted-foreground mt-0.5 leading-snug">
+                + {bumps.map((b) => b.name).join(' · ')}
+              </p>
+            )}
+          </div>
+          <span className="text-primary font-extrabold text-xl whitespace-nowrap">
+            {formatPrice(totalCents, plan.currency)}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-[12px] text-muted-foreground hover:text-primary underline-offset-2 hover:underline transition-colors"
+        >
+          ← Modifier ma commande
+        </button>
+      </div>
+
+      {/* The container is always in the DOM so that mountCheckout()
+          can call checkout.mount(containerRef.current) without the
+          reference being null because of an earlier loading-state
+          unmount. The Stripe iframe is appended inside this div once
+          the session is ready. */}
+      <div ref={containerRef} className="min-h-[400px]" aria-busy={loading} />
+      {loading && (
+        <div className="-mt-[400px] flex flex-col items-center justify-center py-20 text-center pointer-events-none">
+          <div className="w-10 h-10 border-2 border-border border-t-primary rounded-full animate-spin mb-4" />
+          <p className="text-muted-foreground text-sm">
+            Préparation du paiement sécurisé…
+          </p>
+        </div>
+      )}
+    </>
   )
 }
 
